@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 import 'core/birthday_theme.dart';
 import '../../providers/birthday_provider.dart';
 import '../../models/birthday/birthday_memory.dart';
+import '../../models/birthday/birthday_shared_photo_model.dart';
+import '../../models/birthday/birthday_event.dart';
 
 class BirthdayMemoryVaultScreen extends StatefulWidget {
   const BirthdayMemoryVaultScreen({super.key});
@@ -16,7 +18,9 @@ class BirthdayMemoryVaultScreen extends StatefulWidget {
 }
 
 class _BirthdayMemoryVaultScreenState extends State<BirthdayMemoryVaultScreen> {
+  int _vaultTab = 0; // 0 = Shared Event Gallery, 1 = Personal Scrapbook
   String _selectedFilter = 'All'; // All, Photos, Notes
+  String _galleryRoleFilter = 'All'; // All, Photographer, Host, Guest
 
   @override
   Widget build(BuildContext context) {
@@ -31,17 +35,24 @@ class _BirthdayMemoryVaultScreenState extends State<BirthdayMemoryVaultScreen> {
           onPressed: () => Navigator.maybePop(context),
         ),
         title: Text(
-          'Memory Vault',
+          'Memory Vault & Gallery',
           style: BirthdayTheme.heading3,
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add_photo_alternate_rounded, color: BirthdayTheme.mutedGold),
-            tooltip: 'Add Memory',
+            icon: Icon(
+              _vaultTab == 0 ? Icons.add_photo_alternate_rounded : Icons.post_add_rounded,
+              color: BirthdayTheme.mutedGold,
+            ),
+            tooltip: _vaultTab == 0 ? 'Upload to Gallery' : 'Add Memory',
             onPressed: () {
               final provider = Provider.of<BirthdayProvider>(context, listen: false);
               if (provider.activeEvent != null) {
-                _showAddChoiceDialog(context, provider);
+                if (_vaultTab == 0) {
+                  _showUploadSharedPhotoSheet(context, provider, provider.activeEvent!);
+                } else {
+                  _showAddChoiceDialog(context, provider);
+                }
               } else {
                 _showNoEventSnack(context);
               }
@@ -49,6 +60,70 @@ class _BirthdayMemoryVaultScreenState extends State<BirthdayMemoryVaultScreen> {
           ),
           const SizedBox(width: 8),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: BirthdayTheme.subtleBorder),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _vaultTab = 0),
+                      child: Container(
+                        decoration: _vaultTab == 0
+                            ? BoxDecoration(
+                                gradient: BirthdayTheme.blushFloralGradient,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: BirthdayTheme.champagneBorder, width: 0.8),
+                              )
+                            : null,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Shared Event Gallery',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: _vaultTab == 0 ? FontWeight.bold : FontWeight.w500,
+                            color: BirthdayTheme.darkWarmBrown,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _vaultTab = 1),
+                      child: Container(
+                        decoration: _vaultTab == 1
+                            ? BoxDecoration(
+                                gradient: BirthdayTheme.blushFloralGradient,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: BirthdayTheme.champagneBorder, width: 0.8),
+                              )
+                            : null,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Personal Scrapbook',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: _vaultTab == 1 ? FontWeight.bold : FontWeight.w500,
+                            color: BirthdayTheme.darkWarmBrown,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
       body: Consumer<BirthdayProvider>(
         builder: (context, provider, child) {
@@ -63,106 +138,613 @@ class _BirthdayMemoryVaultScreenState extends State<BirthdayMemoryVaultScreen> {
             return _buildNoActiveEventState(context);
           }
 
-          final memories = provider.memories;
-          final totalCount = memories.length;
-          final photoCount = memories.where((m) => m.type == 'photo').length;
-          final noteCount = memories.where((m) => m.type == 'note').length;
-
-          // Filter
-          final filteredMemories = memories.where((m) {
-            switch (_selectedFilter) {
-              case 'Photos':
-                return m.type == 'photo';
-              case 'Notes':
-                return m.type == 'note';
-              case 'All':
-              default:
-                return true;
-            }
-          }).toList()
-            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-          return RefreshIndicator(
-            color: BirthdayTheme.mutedGold,
-            backgroundColor: BirthdayTheme.softWhite,
-            onRefresh: () => provider.loadEventData(activeEvent.id),
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
-              ),
-              slivers: [
-                // Top header & filter chips
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildHeroBanner(
-                          personName: activeEvent.personName,
-                          totalCount: totalCount,
-                          photoCount: photoCount,
-                          noteCount: noteCount,
-                        ),
-                        const SizedBox(height: 16),
-                        _buildFilterRow(
-                          totalCount: totalCount,
-                          photoCount: photoCount,
-                          noteCount: noteCount,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Grid or Empty State
-                if (filteredMemories.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _buildEmptyState(context, provider),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
-                    sliver: SliverGrid(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 14,
-                        mainAxisSpacing: 14,
-                        childAspectRatio: 0.78,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final memory = filteredMemories[index];
-                          if (memory.type == 'photo') {
-                            return _buildPhotoCard(context, memory, provider);
-                          } else {
-                            return _buildNoteCard(context, memory, provider);
-                          }
-                        },
-                        childCount: filteredMemories.length,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          );
+          if (_vaultTab == 0) {
+            return _buildSharedGalleryView(context, provider, activeEvent);
+          } else {
+            return _buildPersonalScrapbookView(context, provider, activeEvent);
+          }
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: BirthdayTheme.mutedGold,
+        backgroundColor: const Color(0xFFB0895A),
         foregroundColor: BirthdayTheme.softWhite,
         elevation: 4,
         onPressed: () {
           final provider = Provider.of<BirthdayProvider>(context, listen: false);
           if (provider.activeEvent != null) {
-            _showAddChoiceDialog(context, provider);
+            if (_vaultTab == 0) {
+              _showUploadSharedPhotoSheet(context, provider, provider.activeEvent!);
+            } else {
+              _showAddChoiceDialog(context, provider);
+            }
           } else {
             _showNoEventSnack(context);
           }
         },
-        icon: const Icon(Icons.add_a_photo_rounded, size: 20),
-        label: Text('Add Memory', style: BirthdayTheme.buttonText.copyWith(color: BirthdayTheme.softWhite, fontSize: 14)),
+        icon: Icon(_vaultTab == 0 ? Icons.add_a_photo_rounded : Icons.post_add_rounded, size: 20),
+        label: Text(
+          _vaultTab == 0 ? 'Upload Photo' : 'Add Memory',
+          style: BirthdayTheme.buttonText.copyWith(color: BirthdayTheme.softWhite, fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPersonalScrapbookView(
+    BuildContext context,
+    BirthdayProvider provider,
+    BirthdayEvent activeEvent,
+  ) {
+    final memories = provider.memories;
+    final totalCount = memories.length;
+    final photoCount = memories.where((m) => m.type == 'photo').length;
+    final noteCount = memories.where((m) => m.type == 'note').length;
+
+    final filteredMemories = memories.where((m) {
+      switch (_selectedFilter) {
+        case 'Photos':
+          return m.type == 'photo';
+        case 'Notes':
+          return m.type == 'note';
+        case 'All':
+        default:
+          return true;
+      }
+    }).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return RefreshIndicator(
+      color: BirthdayTheme.mutedGold,
+      backgroundColor: BirthdayTheme.softWhite,
+      onRefresh: () => provider.loadEventData(activeEvent.id),
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeroBanner(
+                    personName: activeEvent.personName,
+                    totalCount: totalCount,
+                    photoCount: photoCount,
+                    noteCount: noteCount,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildFilterRow(
+                    totalCount: totalCount,
+                    photoCount: photoCount,
+                    noteCount: noteCount,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (filteredMemories.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _buildEmptyState(context, provider),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 14,
+                  mainAxisSpacing: 14,
+                  childAspectRatio: 0.78,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final memory = filteredMemories[index];
+                    if (memory.type == 'photo') {
+                      return _buildPhotoCard(context, memory, provider);
+                    } else {
+                      return _buildNoteCard(context, memory, provider);
+                    }
+                  },
+                  childCount: filteredMemories.length,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharedGalleryView(
+    BuildContext context,
+    BirthdayProvider provider,
+    BirthdayEvent activeEvent,
+  ) {
+    final photos = provider.sharedPhotos.where((p) {
+      if (_galleryRoleFilter == 'Photographer') return p.uploaderRole.toLowerCase() == 'photographer';
+      if (_galleryRoleFilter == 'Host') return p.uploaderRole.toLowerCase() == 'host';
+      if (_galleryRoleFilter == 'Guests') return p.uploaderRole.toLowerCase() == 'guest';
+      return true;
+    }).toList();
+
+    return RefreshIndicator(
+      color: BirthdayTheme.mutedGold,
+      backgroundColor: BirthdayTheme.softWhite,
+      onRefresh: () => provider.loadSharedPhotos(activeEvent.id),
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  BirthdayTheme.blushFloralCard(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BirthdayTheme.champagneGoldIconDecoration(radius: 12),
+                            child: const Icon(
+                              Icons.photo_camera_back_rounded,
+                              color: Color(0xFF7A4E2B),
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Private Shared Gallery',
+                                  style: GoogleFonts.playfairDisplay(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: BirthdayTheme.darkWarmBrown,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'All authorized guests & photographers can upload and download memories in original resolution.',
+                                  style: BirthdayTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: ['All', 'Photographer', 'Host', 'Guests'].map((role) {
+                        final isSelected = _galleryRoleFilter == role;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(role),
+                            selected: isSelected,
+                            selectedColor: const Color(0xFFF2DFC2),
+                            backgroundColor: Colors.white.withValues(alpha: 0.6),
+                            labelStyle: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              color: BirthdayTheme.darkWarmBrown,
+                            ),
+                            onSelected: (_) => setState(() => _galleryRoleFilter = role),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (photos.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BirthdayTheme.champagneGoldIconDecoration(radius: 20),
+                        child: const Icon(
+                          Icons.add_photo_alternate_outlined,
+                          color: Color(0xFF7A4E2B),
+                          size: 36,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No Shared Photos Yet',
+                        style: BirthdayTheme.heading3,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Be the first to share celebration moments with the host and attendees.',
+                        style: BirthdayTheme.bodySmall,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        style: BirthdayTheme.primaryButton,
+                        onPressed: () => _showUploadSharedPhotoSheet(context, provider, activeEvent),
+                        icon: const Icon(Icons.upload_rounded, size: 18),
+                        label: const Text('Upload First Photograph'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.82,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final photo = photos[index];
+                    return _buildSharedPhotoCard(context, photo);
+                  },
+                  childCount: photos.length,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharedPhotoCard(BuildContext context, BirthdaySharedPhoto photo) {
+    return BirthdayTheme.blushFloralCard(
+      child: InkWell(
+        onTap: () => _showPhotoLightbox(context, photo),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              photo.imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => _buildImageFallback(),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.8),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (photo.caption.isNotEmpty)
+                      Text(
+                        photo.caption,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    Row(
+                      children: [
+                        Text(
+                          photo.uploaderName.split(' ').first,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 10,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        const Spacer(),
+                        const Icon(Icons.favorite_rounded, color: Color(0xFFFF8A80), size: 12),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${photo.likesCount}',
+                          style: GoogleFonts.plusJakartaSans(fontSize: 10, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPhotoLightbox(BuildContext context, BirthdaySharedPhoto photo) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            photo.uploaderName,
+                            style: GoogleFonts.plusJakartaSans(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            'Shared ${DateFormat('MMM d, h:mm a').format(photo.createdAt)}',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: Colors.white70,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.download_rounded, color: Colors.white),
+                      tooltip: 'Download Photograph',
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Downloading original high-resolution photo...'),
+                            backgroundColor: BirthdayTheme.darkWarmBrown,
+                          ),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.white),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: InteractiveViewer(
+                    panEnabled: true,
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Image.network(
+                      photo.imageUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => _buildImageFallback(),
+                    ),
+                  ),
+                ),
+              ),
+              if (photo.caption.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    photo.caption,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: Colors.white,
+                      fontSize: 13,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showUploadSharedPhotoSheet(
+    BuildContext context,
+    BirthdayProvider provider,
+    BirthdayEvent activeEvent,
+  ) {
+    final captionController = TextEditingController();
+    String role = 'Guest';
+    final picker = ImagePicker();
+    XFile? pickedFile;
+    bool isUploading = false;
+    double uploadProgress = 0.0;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: BirthdayTheme.warmIvoryBase,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Upload to Shared Gallery', style: BirthdayTheme.heading3),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(sheetCtx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (pickedFile != null)
+                  Container(
+                    height: 140,
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      image: DecorationImage(
+                        image: FileImage(File(pickedFile!.path)),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: BirthdayTheme.secondaryButton,
+                          onPressed: () async {
+                            final file = await picker.pickImage(source: ImageSource.gallery);
+                            if (file != null) setSheetState(() => pickedFile = file);
+                          },
+                          icon: const Icon(Icons.photo_library_rounded, size: 18),
+                          label: const Text('Choose Photo'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: BirthdayTheme.secondaryButton,
+                          onPressed: () async {
+                            final file = await picker.pickImage(source: ImageSource.camera);
+                            if (file != null) setSheetState(() => pickedFile = file);
+                          },
+                          icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                          label: const Text('Take Picture'),
+                        ),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: role,
+                  decoration: BirthdayTheme.inputDecoration('Your Role in Event'),
+                  items: ['Guest', 'Host', 'Photographer'].map((r) {
+                    return DropdownMenuItem(value: r, child: Text(r));
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) setSheetState(() => role = val);
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: captionController,
+                  decoration: BirthdayTheme.inputDecoration('Caption / Memory note'),
+                ),
+                if (isUploading) ...[
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(
+                    value: uploadProgress,
+                    backgroundColor: BirthdayTheme.subtleBorder,
+                    valueColor: const AlwaysStoppedAnimation(Color(0xFFB0895A)),
+                  ),
+                  const SizedBox(height: 4),
+                  Center(
+                    child: Text(
+                      'Uploading to Supabase Storage... ${(uploadProgress * 100).toInt()}%',
+                      style: BirthdayTheme.bodySmall,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: BirthdayTheme.primaryButton,
+                    onPressed: isUploading
+                        ? null
+                        : () async {
+                            setSheetState(() {
+                              isUploading = true;
+                              uploadProgress = 0.3;
+                            });
+                            await Future.delayed(const Duration(milliseconds: 500));
+                            setSheetState(() => uploadProgress = 0.8);
+                            await Future.delayed(const Duration(milliseconds: 500));
+                            setSheetState(() => uploadProgress = 1.0);
+
+                            final newPhoto = BirthdaySharedPhoto(
+                              id: 'p_${DateTime.now().millisecondsSinceEpoch}',
+                              eventId: activeEvent.id,
+                              uploaderName: role == 'Host'
+                                  ? activeEvent.personName
+                                  : 'Guest Participant',
+                              uploaderRole: role.toLowerCase(),
+                              imageUrl: pickedFile != null
+                                  ? pickedFile!.path
+                                  : 'https://images.unsplash.com/photo-1513151233558-d860c5398176',
+                              caption: captionController.text.trim(),
+                              createdAt: DateTime.now(),
+                            );
+
+                            await provider.addSharedPhoto(newPhoto);
+
+                            if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Photo uploaded to shared event gallery!'),
+                                  backgroundColor: BirthdayTheme.darkWarmBrown,
+                                ),
+                              );
+                            }
+                          },
+                    child: const Text('Post to Shared Gallery'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

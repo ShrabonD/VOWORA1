@@ -6,7 +6,12 @@ import '../models/birthday/birthday_guest.dart';
 import '../models/birthday/birthday_gift.dart';
 import '../models/birthday/birthday_timeline_item.dart';
 import '../models/birthday/birthday_memory.dart';
+import '../models/birthday/birthday_service_models.dart';
+import '../models/birthday/birthday_booking_model.dart';
+import '../models/birthday/birthday_payment_model.dart';
+import '../models/birthday/birthday_shared_photo_model.dart';
 import '../screens/birthday/services/birthday_service.dart';
+import '../services/supabase_birthday_service.dart';
 
 class BirthdayProvider extends ChangeNotifier {
   List<BirthdayEvent> _events = [];
@@ -19,6 +24,15 @@ class BirthdayProvider extends ChangeNotifier {
   List<BirthdayMemory> _memories = [];
   bool _isLoading = false;
 
+  // ===== NEW: SERVICE SELECTION, BOOKING & GALLERY STATE =====
+  List<BirthdayServicePackage> _packages = [];
+  final List<BirthdayServiceCartItem> _serviceCart = [];
+  List<BirthdayBooking> _userBookings = [];
+  List<BirthdaySharedPhoto> _sharedPhotos = [];
+  DateTime? _selectedBookingDate;
+  BirthdayTimeSlot? _selectedBookingSlot;
+  String? _activeReservationToken;
+
   // Getters
   List<BirthdayEvent> get events => _events;
   BirthdayEvent? get activeEvent => _activeEvent;
@@ -29,6 +43,20 @@ class BirthdayProvider extends ChangeNotifier {
   List<BirthdayTimelineItem> get timeline => _timeline;
   List<BirthdayMemory> get memories => _memories;
   bool get isLoading => _isLoading;
+
+  // Service & Booking Getters
+  List<BirthdayServicePackage> get packages => _packages;
+  List<BirthdayServiceCartItem> get serviceCart => List.unmodifiable(_serviceCart);
+  List<BirthdayBooking> get userBookings => _userBookings;
+  List<BirthdaySharedPhoto> get sharedPhotos => _sharedPhotos;
+  DateTime? get selectedBookingDate => _selectedBookingDate;
+  BirthdayTimeSlot? get selectedBookingSlot => _selectedBookingSlot;
+  String? get activeReservationToken => _activeReservationToken;
+
+  int get cartItemCount => _serviceCart.length;
+  double get cartSubtotal => _serviceCart.fold(0.0, (sum, item) => sum + item.totalCost);
+  double get cartServiceFee => cartSubtotal > 0 ? (cartSubtotal * 0.03).roundToDouble() : 0.0;
+  double get cartTotal => cartSubtotal + cartServiceFee;
 
   // ===== Derived Stats =====
   List<BirthdayEvent> get upcomingEvents => _events.where((e) => e.daysRemaining > 0).toList()
@@ -89,6 +117,9 @@ class BirthdayProvider extends ChangeNotifier {
       if (_activeEvent != null) {
         await loadEventData(_activeEvent!.id);
       }
+      // Load packages & bookings from Supabase service
+      _packages = await SupabaseBirthdayService.fetchAllPackages();
+      _userBookings = await SupabaseBirthdayService.fetchUserBookings(null);
     } catch (e) {
       debugPrint('BirthdayProvider.loadAll error: $e');
     }
@@ -103,6 +134,7 @@ class BirthdayProvider extends ChangeNotifier {
     _gifts = await BirthdayService.getEventGifts(eventId);
     _timeline = await BirthdayService.getEventTimeline(eventId);
     _memories = await BirthdayService.getEventMemories(eventId);
+    _sharedPhotos = await SupabaseBirthdayService.fetchEventPhotos(eventId);
     notifyListeners();
   }
 
@@ -111,23 +143,151 @@ class BirthdayProvider extends ChangeNotifier {
     loadEventData(event.id);
   }
 
+  // ===== SERVICE CART OPERATIONS =====
+  bool isPackageInCart(String packageId) {
+    return _serviceCart.any((item) => item.package.id == packageId);
+  }
+
+  BirthdayServiceCartItem? getCartItem(String packageId) {
+    try {
+      return _serviceCart.firstWhere((item) => item.package.id == packageId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void addOrUpdateCartItem({
+    required BirthdayServicePackage package,
+    int quantity = 25,
+    List<BirthdayServiceAddon>? addons,
+    String customNotes = '',
+  }) {
+    final existingIdx = _serviceCart.indexWhere((item) => item.package.id == package.id);
+    if (existingIdx != -1) {
+      _serviceCart[existingIdx] = BirthdayServiceCartItem(
+        package: package,
+        quantity: quantity,
+        selectedAddons: addons ?? _serviceCart[existingIdx].selectedAddons,
+        customNotes: customNotes.isNotEmpty ? customNotes : _serviceCart[existingIdx].customNotes,
+      );
+    } else {
+      _serviceCart.add(BirthdayServiceCartItem(
+        package: package,
+        quantity: quantity,
+        selectedAddons: addons ?? [],
+        customNotes: customNotes,
+      ));
+    }
+    notifyListeners();
+  }
+
+  void removeCartItem(String packageId) {
+    _serviceCart.removeWhere((item) => item.package.id == packageId);
+    notifyListeners();
+  }
+
+  void updateCartItemQuantity(String packageId, int newQuantity) {
+    final item = getCartItem(packageId);
+    if (item != null && newQuantity > 0) {
+      item.quantity = newQuantity;
+      notifyListeners();
+    }
+  }
+
+  void toggleCartItemAddon(String packageId, BirthdayServiceAddon addon) {
+    final item = getCartItem(packageId);
+    if (item != null) {
+      final hasAddon = item.selectedAddons.any((a) => a.id == addon.id);
+      if (hasAddon) {
+        item.selectedAddons.removeWhere((a) => a.id == addon.id);
+      } else {
+        item.selectedAddons.add(addon);
+      }
+      notifyListeners();
+    }
+  }
+
+  void clearServiceCart() {
+    _serviceCart.clear();
+    notifyListeners();
+  }
+
+  // ===== BOOKING CALENDAR & SLOTS =====
+  void selectDateAndSlot(DateTime date, BirthdayTimeSlot slot) {
+    _selectedBookingDate = date;
+    _selectedBookingSlot = slot;
+    notifyListeners();
+  }
+
+  Future<bool> reserveSelectedSlot() async {
+    if (_selectedBookingDate == null || _selectedBookingSlot == null) return false;
+    final token = 'res_${DateTime.now().millisecondsSinceEpoch}';
+    final success = await SupabaseBirthdayService.reserveSlotTemporary(
+      date: _selectedBookingDate!,
+      slot: _selectedBookingSlot!,
+      token: token,
+      duration: const Duration(minutes: 15),
+    );
+    if (success) {
+      _activeReservationToken = token;
+      notifyListeners();
+    }
+    return success;
+  }
+
+  Future<void> releaseActiveSlot() async {
+    if (_selectedBookingDate != null && _selectedBookingSlot != null) {
+      await SupabaseBirthdayService.releaseSlot(_selectedBookingDate!, _selectedBookingSlot!);
+      _activeReservationToken = null;
+      notifyListeners();
+    }
+  }
+
+  // ===== BOOKING SUBMISSION & PAYMENT =====
+  Future<bool> submitBookingAndPayment({
+    required BirthdayBooking booking,
+    required BirthdayPayment payment,
+  }) async {
+    final success = await SupabaseBirthdayService.submitBooking(
+      booking: booking,
+      payment: payment,
+    );
+    if (success) {
+      _userBookings.insert(0, booking);
+      _serviceCart.clear();
+      _selectedBookingDate = null;
+      _selectedBookingSlot = null;
+      _activeReservationToken = null;
+      notifyListeners();
+    }
+    return success;
+  }
+
+  // ===== SHARED GALLERY OPERATIONS =====
+  Future<void> loadSharedPhotos(String eventId) async {
+    _sharedPhotos = await SupabaseBirthdayService.fetchEventPhotos(eventId);
+    notifyListeners();
+  }
+
+  Future<bool> addSharedPhoto(BirthdaySharedPhoto photo) async {
+    final success = await SupabaseBirthdayService.addEventPhoto(photo);
+    if (success) {
+      _sharedPhotos.insert(0, photo);
+      notifyListeners();
+    }
+    return success;
+  }
+
   // ===== EVENT CRUD =====
-  Future<void> addEvent(BirthdayEvent event) async {
+  Future<void> createEvent(BirthdayEvent event) async {
     await BirthdayService.addEvent(event);
     _events.add(event);
     _activeEvent = event;
-    // Add default tasks & timeline for new event
-    final defaultTasks = BirthdayTask.defaultTasks(event.id);
-    for (final t in defaultTasks) {
-      await BirthdayService.addTask(t);
-    }
-    final defaultTimeline = BirthdayTimelineItem.defaultTimeline(event.id);
-    for (final t in defaultTimeline) {
-      await BirthdayService.addTimelineItem(t);
-    }
     await loadEventData(event.id);
     notifyListeners();
   }
+
+  Future<void> addEvent(BirthdayEvent event) => createEvent(event);
 
   Future<void> updateEvent(BirthdayEvent event) async {
     await BirthdayService.updateEvent(event);
@@ -144,13 +304,6 @@ class BirthdayProvider extends ChangeNotifier {
       _activeEvent = _events.isNotEmpty ? _events.first : null;
       if (_activeEvent != null) {
         await loadEventData(_activeEvent!.id);
-      } else {
-        _expenses = [];
-        _tasks = [];
-        _guests = [];
-        _gifts = [];
-        _timeline = [];
-        _memories = [];
       }
     }
     notifyListeners();
@@ -190,6 +343,12 @@ class BirthdayProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteTask(String taskId) async {
+    await BirthdayService.deleteTask(taskId);
+    _tasks.removeWhere((t) => t.id == taskId);
+    notifyListeners();
+  }
+
   Future<void> toggleTask(String taskId) async {
     final idx = _tasks.indexWhere((t) => t.id == taskId);
     if (idx != -1) {
@@ -197,12 +356,6 @@ class BirthdayProvider extends ChangeNotifier {
       await BirthdayService.updateTask(_tasks[idx]);
       notifyListeners();
     }
-  }
-
-  Future<void> deleteTask(String taskId) async {
-    await BirthdayService.deleteTask(taskId);
-    _tasks.removeWhere((t) => t.id == taskId);
-    notifyListeners();
   }
 
   // ===== GUEST CRUD =====

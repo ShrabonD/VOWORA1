@@ -39,6 +39,20 @@ static const String supabaseAnonKey = 'your-anon-public-key-here';
    - `timeline_events`
    - Automated `on_auth_user_created` trigger for profile initialization.
 
+### Birthday booking schema
+The Birthday module uses separate tables and is not created by `supabase_schema.sql`.
+In the SQL Editor, run `supabase_birthday_schema.sql` after the main schema. For an
+existing installation, apply `supabase_birthday_payment_migration.sql` after the
+Birthday schema to add partial-payment fields and transaction idempotency. These
+scripts create the Birthday tables only when absent; they do not create duplicate
+tables. If PostgREST still reports `PGRST205`, refresh the schema cache from the
+Supabase Dashboard or run `NOTIFY pgrst, 'reload schema';` in the SQL Editor.
+
+Payment table writes are restricted to trusted server-side code. Do not grant the
+Flutter client direct payment or booking-status writes. A production checkout also
+requires a deployed Edge Function or equivalent backend configured with a
+Bangladesh-compatible gateway's merchant credentials and verified callback flow.
+
 ---
 
 ## Step 5: Enable Email / Password Authentication

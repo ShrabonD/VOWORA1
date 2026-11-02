@@ -13,6 +13,10 @@ import '../screens/vendors/vendors_screen.dart';
 import '../screens/events/wedding_vendor_discovery_screen.dart';
 import '../screens/events/birthday_vendor_discovery_screen.dart';
 import '../screens/birthday/birthday_home_screen.dart';
+import '../screens/birthday/birthday_service_selection_screen.dart';
+import '../screens/birthday/birthday_booking_calendar_screen.dart';
+import '../screens/birthday/birthday_checkout_screen.dart';
+import '../screens/birthday/birthday_booking_history_screen.dart';
 import '../screens/wedding_module/wedding_wizard_host_screen.dart';
 import '../screens/wedding_module/main_wedding_dashboard_view.dart';
 import '../screens/wedding_ecosystem/join_wedding_screen.dart';
@@ -50,6 +54,10 @@ class AppRoutes {
   static const String weddingVendors = '/wedding-vendors';
   static const String birthdayVendors = '/birthday-vendors';
   static const String birthdayStudio = '/birthday-studio';
+  static const String birthdayServiceSelection = '/birthday-service-selection';
+  static const String birthdayBookingCalendar = '/birthday-booking-calendar';
+  static const String birthdayCheckout = '/birthday-checkout';
+  static const String birthdayBookingHistory = '/birthday-booking-history';
   static const String weddingManager = '/wedding-manager';
   static const String weddingDashboard = '/wedding-dashboard';
   static const String joinWedding = '/join-wedding';
@@ -89,6 +97,10 @@ class AppRoutes {
       weddingVendors: (context) => const WeddingVendorDiscoveryScreen(),
       birthdayVendors: (context) => const BirthdayVendorDiscoveryScreen(),
       birthdayStudio: (context) => const BirthdayHomeScreen(),
+      birthdayServiceSelection: (context) => const BirthdayServiceSelectionScreen(),
+      birthdayBookingCalendar: (context) => const BirthdayBookingCalendarScreen(),
+      birthdayCheckout: (context) => const BirthdayCheckoutScreen(),
+      birthdayBookingHistory: (context) => const BirthdayBookingHistoryScreen(),
       weddingManager: (context) => const WeddingWizardHostScreen(),
       weddingDashboard: (context) => const MainWeddingDashboardView(),
       joinWedding: (context) => const JoinWeddingScreen(),
